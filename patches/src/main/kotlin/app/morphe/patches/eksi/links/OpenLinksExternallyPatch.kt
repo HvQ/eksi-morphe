@@ -4,7 +4,9 @@ import app.morphe.patcher.Fingerprint
 import app.morphe.patcher.InstructionLocation
 import app.morphe.patcher.extensions.InstructionExtensions.addInstructions
 import app.morphe.patcher.extensions.InstructionExtensions.removeInstruction
+import app.morphe.patcher.extensions.InstructionExtensions.replaceInstruction
 import app.morphe.patcher.methodCall
+import app.morphe.patcher.opcode
 import app.morphe.patcher.patch.bytecodePatch
 import app.morphe.patcher.string
 import app.morphe.patches.eksi.shared.Constants.COMPATIBILITY_EKSI
@@ -17,11 +19,15 @@ private val externalLinkCustomTabFingerprint = Fingerprint(
     parameters = listOf(),
     filters = listOf(
         string("APP_LINK_OPEN_EXTERNAL"),
+        opcode(
+            Opcode.IF_EQZ,
+            location = InstructionLocation.MatchAfterWithin(2),
+        ),
         methodCall(
             parameters = listOf("Landroid/content/Context;", "Landroid/net/Uri;"),
             returnType = "V",
             opcode = Opcode.INVOKE_VIRTUAL,
-            location = InstructionLocation.MatchAfterWithin(6),
+            location = InstructionLocation.MatchAfterWithin(2),
         ),
     ),
 )
@@ -35,7 +41,8 @@ val openLinksExternallyPatch = bytecodePatch(
 
     execute {
         val match = externalLinkCustomTabFingerprint.match()
-        val launchMatch = match.instructionMatches[1]
+        val preferenceGateMatch = match.instructionMatches[1]
+        val launchMatch = match.instructionMatches[2]
         val launch = launchMatch.getInstruction<FiveRegisterInstruction>()
 
         require(launch.registerCount == 3) { "Unexpected Custom Tab launch registers" }
@@ -45,6 +52,7 @@ val openLinksExternallyPatch = bytecodePatch(
         val uriRegister = launch.registerE
 
         match.method.apply {
+            replaceInstruction(preferenceGateMatch.index, "nop")
             removeInstruction(launchMatch.index)
             addInstructions(
                 launchMatch.index,
